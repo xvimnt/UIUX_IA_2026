@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Girl12 — 3D Lip-Sync & Voice Avatar</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: rgba(22, 25, 35, 0.88);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #e11d48;
+      --accent-hover: #f43f5e;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at 50% 30%, #1e2436 0%, #0b0d13 100%);
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      inset: 0;
+    }
+    .hud {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(740px, 92vw);
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 10;
+    }
+    .hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      font-weight: 500;
+      color: #e5e7eb;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+    }
+    .dot.ready { background: #10b981; }
+    .dot.speaking { background: #e11d48; box-shadow: 0 0 10px #e11d48; }
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+    textarea {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 14px;
+      line-height: 1.45;
+      resize: none;
+      height: 62px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus {
+      border-color: var(--accent);
+    }
+    .btn-col {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 0 18px;
+      height: 100%;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:active:not(:disabled) { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary {
+      background: rgba(255, 255, 255, 0.09);
+      font-size: 12px;
+      height: 30px;
+      padding: 0 12px;
+    }
+    button.secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.16);
+    }
+    .controls-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .cam-buttons {
+      display: flex;
+      gap: 6px;
+    }
+    label.toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+  </style>
+
+  <!-- Three.js & GLTFLoader via CDN importmap -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div class="hud">
+    <div class="hud-header">
+      <span><strong>Girl12</strong> — Real-Time 3D Lip-Sync & Hand Gesture Testbed</span>
+      <span class="status-badge">
+        <span id="status-dot" class="dot"></span>
+        <span id="status-text">Loading 3D Model (10 MB)...</span>
+      </span>
+    </div>
+
+    <div class="input-row">
+      <textarea id="speech-input" placeholder="Type any text or click the Mic button to talk to her...">Hello team! Right now I am running in the browser with Three.js. When I read this text, my lips, jaw, and hands move in sync while I stand naturally!</textarea>
+      <div class="btn-col">
+        <button id="speak-btn" disabled>Speak Text</button>
+        <button id="mic-btn" class="secondary" disabled title="Talk using your Microphone">🎙️ Hold / Click to Talk</button>
+      </div>
+    </div>
+
+    <div class="controls-footer">
+      <label class="toggle">
+        <input type="checkbox" id="audio-toggle" checked />
+        <span>Play Voice Audio (TTS Demo / Voice Model Hook)</span>
+      </label>
+      <div class="cam-buttons">
+        <button class="secondary" id="cam-upper">Upper Body + Hands</button>
+        <button class="secondary" id="cam-closeup">Face Close-Up</button>
+        <button class="secondary" id="cam-full">Full Standing</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const container = document.getElementById('canvas-container');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const speakBtn = document.getElementById('speak-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const speechInput = document.getElementById('speech-input');
+    const audioToggle = document.getElementById('audio-toggle');
+
+    // 1. Scene, Camera, Renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.05, 50);
+    camera.position.set(0, 1.42, 1.35);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.38, 0);
+    controls.enableDamping = true;
+    controls.update();
+
+    // Lighting
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x333344, 1.6);
+    hemiLight.position.set(0, 3, 0);
+    scene.add(hemiLight);
+
+    const keyLight = new THREE.DirectionalLight(0xfff8f0, 2.2);
+    keyLight.position.set(1.2, 2.2, 1.8);
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0x90b4ff, 1.0);
+    rimLight.position.set(-1.5, 1.8, -1.5);
+    scene.add(rimLight);
+
+    // Camera Presets
+    document.getElementById('cam-upper').addEventListener('click', () => {
+      camera.position.set(0, 1.42, 1.35);
+      controls.target.set(0, 1.38, 0);
+    });
+    document.getElementById('cam-closeup').addEventListener('click', () => {
+      camera.position.set(0, 1.63, 0.58);
+      controls.target.set(0, 1.61, 0);
+    });
+    document.getElementById('cam-full').addEventListener('click', () => {
+      camera.position.set(0, 1.05, 2.85);
+      controls.target.set(0, 0.95, 0);
+    });
+
+    // 2. Load Girl12 GLB Model & Setup Rig References
+    const VIS_KEYS = [
+      'V_Open', 'V_Explosive', 'V_Dental_Lip', 'V_Tight_O',
+      'V_Tight', 'V_Wide', 'V_Affricate', 'V_Lip_Open'
+    ];
+
+    let mixer = null;
+    let gestureAction = null;
+    let morphMeshes = []; // Meshes on CC_Base_Body that share the shape keys
+    let blinkMeshes = []; // Meshes that have Eye_Blink_L / Eye_Blink_R
+    let jawBone = null;
+    let jawRestQuat = null;
+
+    // Speech Playback State
+    let isSpeaking = false;
+    let speechStartTime = 0;
+    let speechDuration = 0;
+    let activeVisemeTimeline = [];
+    let currentVisemeWeights = {};
+    VIS_KEYS.forEach(k => currentVisemeWeights[k] = 0);
+    let currentAudio = null;
+
+    const loader = new GLTFLoader();
+    loader.load(
+      '/girl12.glb',
+      (gltf) => {
+        const model = gltf.scene;
+        scene.add(model);
+
+        model.traverse((obj) => {
+          if (obj.isBone && obj.name === 'CC_Base_JawRoot') {
+            jawBone = obj;
+            jawRestQuat = obj.quaternion.clone();
+          }
+          if (obj.isMesh) {
+            obj.frustumCulled = false;
+            if (obj.morphTargetDictionary) {
+              if ('V_Open' in obj.morphTargetDictionary) {
+                morphMeshes.push(obj);
+              }
+              if ('Eye_Blink_L' in obj.morphTargetDictionary) {
+                blinkMeshes.push(obj);
+              }
+            }
+          }
+        });
+
+        // Setup AnimationMixer for Body_Stand_And_Talk
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixer = new THREE.AnimationMixer(model);
+          const clip = gltf.animations[0];
+
+          // Filter out CC_Base_JawRoot tracks from the body clip so our real-time
+          // lip-sync controller has 100% authority over the jaw bone!
+          clip.tracks = clip.tracks.filter(t => !t.name.includes('CC_Base_JawRoot'));
+
+          gestureAction = mixer.clipAction(clip);
+          gestureAction.play();
+          // Start paused at frame 0 (calm standing rest pose with hands at sides)
+          gestureAction.paused = true;
+          gestureAction.time = 0;
+          mixer.update(0.001);
+        }
+
+        statusDot.classList.add('ready');
+        statusText.textContent = 'Ready — Idle Standing';
+        speakBtn.disabled = false;
+        micBtn.disabled = false;
+      },
+      (xhr) => {
+        if (xhr.total) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          statusText.textContent = `Loading 3D Model (${pct}%)...`;
+        }
+      },
+      (err) => {
+        console.error('Error loading GLB:', err);
+        statusText.textContent = 'Error loading girl12.glb';
+      }
+    );
+
+    // Helper to set a morph target across all primitive sub-meshes of CC_Base_Body
+    function setMorphTarget(name, value, meshList = morphMeshes) {
+      for (const mesh of meshList) {
+        const idx = mesh.morphTargetDictionary?.[name];
+        if (idx !== undefined && mesh.morphTargetInfluences) {
+          mesh.morphTargetInfluences[idx] = value;
+        }
+      }
+    }
+
+    // 3. Trigger Speech via Backend /api/speak
+    async function triggerSpeech() {
+      const text = speechInput.value.trim();
+      if (!text) return;
+
+      speakBtn.disabled = true;
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      window.speechSynthesis?.cancel();
+
+      try {
+        const res = await fetch('/api/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            use_server_tts: audioToggle.checked
+          })
+        });
+        const data = await res.json();
+
+        activeVisemeTimeline = data.visemes || [];
+        speechDuration = data.duration || 2.0;
+
+        const startSyncedPlayback = () => {
+          isSpeaking = true;
+          speechStartTime = performance.now() / 1000;
+          statusDot.className = 'dot speaking';
+          statusText.textContent = 'Speaking & Gesturing...';
+
+          // Resume the hand-gesture animation from the beginning of its speaking window
+          if (gestureAction) {
+            gestureAction.paused = false;
+            gestureAction.time = 0.5; // frame 12 where hand gestures begin
+            gestureAction.setEffectiveWeight(1.0);
+          }
+        };
+
+        if (audioToggle.checked && data.audio_url) {
+          currentAudio = new Audio(data.audio_url);
+          currentAudio.addEventListener('play', startSyncedPlayback, { once: true });
+          currentAudio.addEventListener('ended', () => {
+            isSpeaking = false;
+          });
+          await currentAudio.play();
+        } else if (audioToggle.checked && 'speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.onstart = startSyncedPlayback;
+          utter.onend = () => { isSpeaking = false; };
+          window.speechSynthesis.speak(utter);
+        } else {
+          // Pure text-to-viseme test without audio
+          startSyncedPlayback();
+        }
+      } catch (e) {
+        console.error(e);
+        statusText.textContent = 'Error calling /api/speak';
+      } finally {
+        speakBtn.disabled = false;
+      }
+    }
+
+    speakBtn.addEventListener('click', triggerSpeech);
+
+    // 3b. Microphone Speech-to-Text / Voice Input Integration
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isListening = false;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        isListening = true;
+        micBtn.textContent = '🛑 Listening...';
+        statusText.textContent = 'Listening to Microphone...';
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        speechInput.value = transcript;
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        micBtn.textContent = '🎙️ Hold / Click to Talk';
+        if (speechInput.value.trim()) {
+          triggerSpeech();
+        } else {
+          statusText.textContent = 'Ready — Idle Standing';
+        }
+      };
+
+      micBtn.addEventListener('click', () => {
+        if (isListening) {
+          recognition.stop();
+        } else {
+          speechInput.value = '';
+          recognition.start();
+        }
+      });
+    } else {
+      micBtn.title = 'Browser SpeechRecognition not supported; wire MediaRecorder to POST /api/voice-chat';
+      micBtn.addEventListener('click', () => {
+        alert('Use Chrome/Edge/Safari for built-in Web Speech API, or see README for wiring MediaRecorder to your coworker\'s Voice Model endpoint!');
+      });
+    }
+
+    // 4. Real-Time Render & Animation Loop
+    const clock = new THREE.Clock();
+    let nextBlinkTime = 2.0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      const now = performance.now() / 1000;
+
+      controls.update();
+
+      // Update skeletal hand-gesture animation
+      if (mixer && gestureAction) {
+        if (isSpeaking) {
+          mixer.update(dt);
+          // Loop within the active hand-gesture window (0.5s to 24.0s) if speech is long
+          if (gestureAction.time > 24.0) {
+            gestureAction.time = 1.5;
+          }
+        } else {
+          // Smoothly return to frame 0 (hands resting at sides) when silent
+          gestureAction.time = THREE.MathUtils.lerp(gestureAction.time, 0.0, dt * 4.0);
+          mixer.update(0.0001);
+        }
+      }
+
+      // Evaluate active viseme targets
+      const targetWeights = {};
+      VIS_KEYS.forEach(k => targetWeights[k] = 0);
+
+      if (isSpeaking) {
+        const elapsed = now - speechStartTime;
+        if (elapsed > speechDuration + 0.15) {
+          isSpeaking = false;
+          statusDot.className = 'dot ready';
+          statusText.textContent = 'Ready — Idle Standing';
+        } else {
+          for (const ev of activeVisemeTimeline) {
+            if (elapsed >= ev.start && elapsed <= ev.end) {
+              for (const [k, v] of Object.entries(ev.weights)) {
+                targetWeights[k] = v;
+              }
+              break;
+            }
+          }
+        }
+      } else if (statusDot.classList.contains('speaking')) {
+        statusDot.className = 'dot ready';
+        statusText.textContent = 'Ready — Idle Standing';
+      }
+
+      // Smoothly interpolate viseme morph targets (co-articulation)
+      const smoothSpeed = 18.0 * dt;
+      for (const k of VIS_KEYS) {
+        currentVisemeWeights[k] = THREE.MathUtils.lerp(
+          currentVisemeWeights[k],
+          targetWeights[k] || 0,
+          Math.min(1.0, smoothSpeed)
+        );
+        setMorphTarget(k, currentVisemeWeights[k]);
+      }
+
+      // Drive the Jaw Bone (CC_Base_JawRoot) in sync with visemes so lower teeth & chin open!
+      if (jawBone && jawRestQuat) {
+        const jawOpenRad = Math.min(
+          0.28,
+          0.25 * currentVisemeWeights['V_Open'] +
+          0.08 * currentVisemeWeights['V_Wide'] +
+          0.12 * currentVisemeWeights['V_Tight_O'] +
+          0.08 * currentVisemeWeights['V_Lip_Open'] +
+          0.06 * currentVisemeWeights['V_Affricate'] +
+          0.04 * currentVisemeWeights['V_Dental_Lip']
+        );
+        const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), jawOpenRad);
+        jawBone.quaternion.copy(jawRestQuat).multiply(rotZ);
+      }
+
+      // Subtle friendly smile & eyebrow movement while speaking
+      const smileVal = isSpeaking ? 0.22 + 0.08 * Math.sin(now * 2.0) : 0.12;
+      setMorphTarget('Mouth_Smile_L', smileVal);
+      setMorphTarget('Mouth_Smile_R', smileVal);
+      setMorphTarget('Cheek_Raise_L', smileVal * 0.5);
+      setMorphTarget('Cheek_Raise_R', smileVal * 0.5);
+
+      const browVal = isSpeaking ? Math.max(0, 0.3 * Math.sin(now * 3.2)) : 0.0;
+      setMorphTarget('Brow_Raise_Inner_L', browVal);
+      setMorphTarget('Brow_Raise_Inner_R', browVal);
+      setMorphTarget('Brow_Raise_Outer_L', browVal);
+      setMorphTarget('Brow_Raise_Outer_R', browVal);
+
+      // Automatic natural eye blinking every 3–5 seconds
+      if (now > nextBlinkTime) {
+        const blinkPhase = (now - nextBlinkTime) / 0.18;
+        if (blinkPhase <= 1.0) {
+          const blinkVal = Math.sin(blinkPhase * Math.PI);
+          setMorphTarget('Eye_Blink_L', blinkVal, blinkMeshes);
+          setMorphTarget('Eye_Blink_R', blinkVal, blinkMeshes);
+        } else {
+          setMorphTarget('Eye_Blink_L', 0, blinkMeshes);
+          setMorphTarget('Eye_Blink_R', 0, blinkMeshes);
+          nextBlinkTime = now + 2.8 + Math.random() * 2.5;
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
