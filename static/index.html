@@ -159,7 +159,7 @@
 
   <div class="hud">
     <div class="hud-header">
-      <span><strong>Girl12</strong> — Real-Time 3D Lip-Sync & Hand Gesture Testbed</span>
+      <span><strong>Girl12</strong> — Real-Time 3D Lip-Sync & AI Conversational Avatar</span>
       <span class="status-badge">
         <span id="status-dot" class="dot"></span>
         <span id="status-text">Loading 3D Model (10 MB)...</span>
@@ -167,17 +167,18 @@
     </div>
 
     <div class="input-row">
-      <textarea id="speech-input" placeholder="Type any text or click the Mic button to talk to her...">Hello team! Right now I am running in the browser with Three.js. When I read this text, my lips, jaw, and hands move in sync while I stand naturally!</textarea>
+      <textarea id="speech-input" placeholder="Type a message or click 🎙️ to talk with AI via OpenRouter...">What can you do?</textarea>
       <div class="btn-col">
-        <button id="speak-btn" disabled>Speak Text</button>
-        <button id="mic-btn" class="secondary" disabled title="Talk using your Microphone">🎙️ Hold / Click to Talk</button>
+        <button id="chat-btn" disabled title="Ask OpenRouter LLM and have Girl12 speak the answer">Ask AI (OpenRouter)</button>
+        <button id="speak-btn" class="secondary" disabled title="Have her read the exact text directly">Read Directly</button>
+        <button id="mic-btn" class="secondary" disabled title="Talk using your Microphone">🎙️ Talk (Mic + AI)</button>
       </div>
     </div>
 
     <div class="controls-footer">
       <label class="toggle">
         <input type="checkbox" id="audio-toggle" checked />
-        <span>Play Voice Audio (TTS Demo / Voice Model Hook)</span>
+        <span>Play Voice Audio (TTS / Voice Model Hook)</span>
       </label>
       <div class="cam-buttons">
         <button class="secondary" id="cam-upper">Upper Body + Hands</button>
@@ -195,6 +196,7 @@
     const container = document.getElementById('canvas-container');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
+    const chatBtn = document.getElementById('chat-btn');
     const speakBtn = document.getElementById('speak-btn');
     const micBtn = document.getElementById('mic-btn');
     const speechInput = document.getElementById('speech-input');
@@ -310,6 +312,7 @@
 
         statusDot.classList.add('ready');
         statusText.textContent = 'Ready — Idle Standing';
+        chatBtn.disabled = false;
         speakBtn.disabled = false;
         micBtn.disabled = false;
       },
@@ -335,11 +338,92 @@
       }
     }
 
-    // 3. Trigger Speech via Backend /api/speak
-    async function triggerSpeech() {
+    // Helper to play lip-synced audio + gestures for any response payload
+    function playSpeechPayload(data, spokenText) {
+      activeVisemeTimeline = data.visemes || [];
+      speechDuration = data.duration || 2.0;
+
+      const startSyncedPlayback = () => {
+        isSpeaking = true;
+        speechStartTime = performance.now() / 1000;
+        statusDot.className = 'dot speaking';
+        statusText.textContent = `Speaking: "${spokenText.slice(0, 38)}..."`;
+
+        // Resume hand gestures from speaking window (frame 12)
+        if (gestureAction) {
+          gestureAction.paused = false;
+          gestureAction.time = 0.5;
+          gestureAction.setEffectiveWeight(1.0);
+        }
+      };
+
+      if (audioToggle.checked && data.audio_url) {
+        currentAudio = new Audio(data.audio_url);
+        currentAudio.addEventListener('play', startSyncedPlayback, { once: true });
+        currentAudio.addEventListener('ended', () => { isSpeaking = false; });
+        currentAudio.play().catch(e => console.warn('Audio play error:', e));
+      } else if (audioToggle.checked && 'speechSynthesis' in window) {
+        const utter = new SpeechSynthesisUtterance(spokenText);
+        utter.onstart = startSyncedPlayback;
+        utter.onend = () => { isSpeaking = false; };
+        window.speechSynthesis.speak(utter);
+      } else {
+        startSyncedPlayback();
+      }
+    }
+
+    let chatHistory = [];
+
+    // 3. Ask OpenRouter AI (/api/chat)
+    async function triggerAiChat(customPrompt) {
+      const userText = (customPrompt !== undefined ? customPrompt : speechInput.value).trim();
+      if (!userText) return;
+
+      chatBtn.disabled = true;
+      speakBtn.disabled = true;
+      statusDot.className = 'dot';
+      statusText.textContent = 'Thinking with OpenRouter LLM...';
+
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      window.speechSynthesis?.cancel();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userText,
+            history: chatHistory,
+            use_server_tts: audioToggle.checked
+          })
+        });
+        const data = await res.json();
+        if (data.reply_text) {
+          speechInput.value = data.reply_text;
+          chatHistory.push({ role: 'user', content: userText });
+          chatHistory.push({ role: 'assistant', content: data.reply_text });
+          playSpeechPayload(data, data.reply_text);
+        } else {
+          statusText.textContent = 'No reply received from LLM.';
+        }
+      } catch (e) {
+        console.error(e);
+        statusText.textContent = 'Error connecting to /api/chat';
+      } finally {
+        chatBtn.disabled = false;
+        speakBtn.disabled = false;
+      }
+    }
+
+    // 3b. Direct Text-to-Speech (/api/speak)
+    async function triggerDirectSpeak() {
       const text = speechInput.value.trim();
       if (!text) return;
 
+      chatBtn.disabled = true;
       speakBtn.disabled = true;
       if (currentAudio) {
         currentAudio.pause();
@@ -357,51 +441,20 @@
           })
         });
         const data = await res.json();
-
-        activeVisemeTimeline = data.visemes || [];
-        speechDuration = data.duration || 2.0;
-
-        const startSyncedPlayback = () => {
-          isSpeaking = true;
-          speechStartTime = performance.now() / 1000;
-          statusDot.className = 'dot speaking';
-          statusText.textContent = 'Speaking & Gesturing...';
-
-          // Resume the hand-gesture animation from the beginning of its speaking window
-          if (gestureAction) {
-            gestureAction.paused = false;
-            gestureAction.time = 0.5; // frame 12 where hand gestures begin
-            gestureAction.setEffectiveWeight(1.0);
-          }
-        };
-
-        if (audioToggle.checked && data.audio_url) {
-          currentAudio = new Audio(data.audio_url);
-          currentAudio.addEventListener('play', startSyncedPlayback, { once: true });
-          currentAudio.addEventListener('ended', () => {
-            isSpeaking = false;
-          });
-          await currentAudio.play();
-        } else if (audioToggle.checked && 'speechSynthesis' in window) {
-          const utter = new SpeechSynthesisUtterance(text);
-          utter.onstart = startSyncedPlayback;
-          utter.onend = () => { isSpeaking = false; };
-          window.speechSynthesis.speak(utter);
-        } else {
-          // Pure text-to-viseme test without audio
-          startSyncedPlayback();
-        }
+        playSpeechPayload(data, text);
       } catch (e) {
         console.error(e);
         statusText.textContent = 'Error calling /api/speak';
       } finally {
+        chatBtn.disabled = false;
         speakBtn.disabled = false;
       }
     }
 
-    speakBtn.addEventListener('click', triggerSpeech);
+    chatBtn.addEventListener('click', () => triggerAiChat());
+    speakBtn.addEventListener('click', triggerDirectSpeak);
 
-    // 3b. Microphone Speech-to-Text / Voice Input Integration
+    // 3c. Microphone Speech-to-Text -> OpenRouter AI conversation
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let isListening = false;
@@ -415,7 +468,7 @@
       recognition.onstart = () => {
         isListening = true;
         micBtn.textContent = '🛑 Listening...';
-        statusText.textContent = 'Listening to Microphone...';
+        statusText.textContent = 'Listening to your voice...';
       };
 
       recognition.onresult = (event) => {
@@ -428,9 +481,10 @@
 
       recognition.onend = () => {
         isListening = false;
-        micBtn.textContent = '🎙️ Hold / Click to Talk';
-        if (speechInput.value.trim()) {
-          triggerSpeech();
+        micBtn.textContent = '🎙️ Talk (Mic + AI)';
+        const captured = speechInput.value.trim();
+        if (captured) {
+          triggerAiChat(captured);
         } else {
           statusText.textContent = 'Ready — Idle Standing';
         }
@@ -445,9 +499,9 @@
         }
       });
     } else {
-      micBtn.title = 'Browser SpeechRecognition not supported; wire MediaRecorder to POST /api/voice-chat';
+      micBtn.title = 'Browser SpeechRecognition not supported in this browser';
       micBtn.addEventListener('click', () => {
-        alert('Use Chrome/Edge/Safari for built-in Web Speech API, or see README for wiring MediaRecorder to your coworker\'s Voice Model endpoint!');
+        alert('SpeechRecognition is supported in Chrome/Edge/Safari. For Firefox, use the text input + "Ask AI" button!');
       });
     }
 

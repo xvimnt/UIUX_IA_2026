@@ -1,4 +1,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+.env
 static/audio_cache/*.wav
+*.blend1

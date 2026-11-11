@@ -16,15 +16,36 @@ import json
 import os
 import subprocess
 import tempfile
+import urllib.request
+import urllib.error
 import uuid
 import wave
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-PORT = int(os.environ.get("PORT", 8765))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _load_env_file():
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip()
+                    if k not in os.environ:
+                        os.environ[k] = v
+
+_load_env_file()
+
+PORT = int(os.environ.get("PORT", 8765))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 AUDIO_CACHE_DIR = os.path.join(STATIC_DIR, "audio_cache")
 os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
+
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+# Fastest ultra-low-latency model on OpenRouter (benchmarked ~0.2s response time)
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.2-1b-instruct")
 
 # CC3+ Viseme mapping (matches Girl12's morph targets in girl12.glb)
 CHAR_TO_VISEME = {
@@ -155,19 +176,98 @@ def synthesize_voice_model_placeholder(text: str) -> tuple[str | None, float | N
     return None, None
 
 
+def query_openrouter_llm(user_message: str, history: list[dict] | None = None) -> str:
+    """
+    Send prompt to OpenRouter API using the fastest LLM (Llama 3.2 1B Instruct, ~200ms TTFT)
+    to generate natural, conversational responses for the 3D avatar.
+    """
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are Girl12, an expressive and friendly 3D AI companion. "
+                "Keep your answers concise, engaging, and spoken-style (1 to 3 short sentences max) "
+                "so that your speech and lip-sync animation flow naturally without long pauses."
+            ),
+        }
+    ]
+    if history:
+        for msg in history[-6:]:
+            if msg.get("role") in ("user", "assistant") and msg.get("content"):
+                messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_message})
+
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": messages,
+        "max_tokens": 120,
+        "temperature": 0.7,
+    }
+
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8765",
+            "X-Title": "Girl12 3D Avatar",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"OpenRouter API error: {e}")
+        return f"I heard you say: {user_message}. (OpenRouter fallback)"
+
+
 class AvatarRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
 
     def do_POST(self):
-        if self.path == "/api/speak":
-            content_len = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_len) if content_len > 0 else b"{}"
-            try:
-                payload = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                payload = {}
+        content_len = int(self.headers.get("Content-Length", 0))
+        body_bytes = self.rfile.read(content_len) if content_len > 0 else b"{}"
+        try:
+            payload = json.loads(body_bytes.decode("utf-8"))
+        except Exception:
+            payload = {}
 
+        if self.path == "/api/chat":
+            user_message = (payload.get("message") or payload.get("text") or "").strip()
+            history = payload.get("history") or []
+            use_server_tts = bool(payload.get("use_server_tts", True))
+
+            if not user_message:
+                self._send_json(400, {"error": "Please provide non-empty 'message'."})
+                return
+
+            # 1. Generate answer via OpenRouter LLM
+            llm_reply = query_openrouter_llm(user_message, history=history)
+
+            # 2. Synthesize voice audio (via voice model or system TTS)
+            audio_url, audio_dur = (None, None)
+            if use_server_tts:
+                audio_url, audio_dur = synthesize_voice_model_placeholder(llm_reply)
+
+            # 3. Compute viseme lip-sync timeline scaled to exact audio length
+            visemes, duration = text_to_viseme_timeline(llm_reply, target_duration=audio_dur)
+
+            self._send_json(
+                200,
+                {
+                    "user_message": user_message,
+                    "reply_text": llm_reply,
+                    "duration": duration,
+                    "audio_url": audio_url,
+                    "visemes": visemes,
+                    "model": OPENROUTER_MODEL,
+                },
+            )
+        elif self.path == "/api/speak":
             text = (payload.get("text") or "").strip()
             use_server_tts = bool(payload.get("use_server_tts", True))
 

@@ -19,8 +19,9 @@ python3 server.py
 ```
 
 Open **http://localhost:8765** in your browser:
-- **Type any text** and click **Speak Text** to see her read the text, move her lips and jaw in sync, and gesture naturally with her hands while standing still.
-- **Click `🎙️ Hold / Click to Talk`** to speak into your microphone and have her respond and lip-sync automatically.
+- **Ask AI (OpenRouter)**: Click **Ask AI** or press Enter to have the ultra-fast **Llama 3.2 1B** LLM generate an intelligent answer via OpenRouter and watch Girl12 speak it with synchronized lip visemes, jaw rotation, and hand gestures.
+- **🎙️ Talk (Mic + AI)**: Click the microphone button and speak your question—the browser transcribes your speech, queries OpenRouter, and Girl12 speaks the answer back!
+- **Read Directly**: Type custom text and click **Read Directly** to test pure text-to-lip-sync without calling the LLM.
 - Use the camera preset buttons (**Upper Body + Hands**, **Face Close-Up**, **Full Standing**) to inspect the facial visemes and hand gestures.
 
 ---
@@ -29,9 +30,9 @@ Open **http://localhost:8765** in your browser:
 
 ```text
 UIUX_IA_2026/
-├── server.py               # Zero-dependency Python HTTP & Lip-Sync API server (POST /api/speak)
+├── server.py               # Zero-dependency Python HTTP, Lip-Sync & OpenRouter LLM API (POST /api/chat, POST /api/speak)
 ├── static/
-│   ├── index.html          # Three.js real-time 3D frontend + Web Speech / Mic integration
+│   ├── index.html          # Three.js real-time 3D frontend + OpenRouter AI chat + Microphone support
 │   └── girl12.glb          # Web-optimized 3D character (10.5 MB, 56 shape keys + Body_Stand_And_Talk animation)
 ├── lipsync_engine.py       # Blender Python script for procedural lip-sync & hand gestures inside Blender
 └── README.md
