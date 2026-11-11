@@ -464,70 +464,146 @@
     chatBtn.addEventListener('click', () => triggerAiChat());
     speakBtn.addEventListener('click', triggerDirectSpeak);
 
-    // 3c. Microphone Speech-to-Text -> OpenRouter AI conversation
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let recognition = null;
-    let isListening = false;
+    // 3c. Reliable Microphone Audio Recording via MediaRecorder + Web Audio API
+    // Records clean 16kHz WAV audio directly from your microphone and sends it to OpenRouter
+    let mediaStream = null;
+    let audioCtx = null;
+    let micNode = null;
+    let scriptProcessor = null;
+    let recordedPcm = [];
+    let isRecordingMic = false;
 
-    if (SpeechRecognition) {
-      recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
+    function encodeWAV(samples, sampleRate = 16000) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
 
-      recognition.onstart = () => {
-        isListening = true;
-        micBtn.classList.add('mic-active');
-        micBtn.textContent = '🛑 Stop Listening';
-        statusDot.className = 'dot listening';
-        statusText.textContent = 'Listening to your microphone...';
-      };
-
-      recognition.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+      function writeString(offset, string) {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
         }
-        speechInput.value = transcript;
-        statusText.textContent = `Heard: "${transcript}"`;
-      };
+      }
 
-      recognition.onend = () => {
-        isListening = false;
-        micBtn.classList.remove('mic-active');
-        micBtn.textContent = '🎙️ Talk (Mic + AI)';
-        const captured = speechInput.value.trim();
-        if (captured) {
-          triggerAiChat(captured);
-        } else {
-          statusDot.className = 'dot ready';
-          statusText.textContent = 'Ready — Idle Standing';
-        }
-      };
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + samples.length * 2, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true); // PCM chunk size
+      view.setUint16(20, 1, true);  // linear quantization
+      view.setUint16(22, 1, true);  // mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true); // byte rate
+      view.setUint16(32, 2, true);  // block align
+      view.setUint16(34, 16, true); // bits per sample
+      writeString(36, 'data');
+      view.setUint32(40, samples.length * 2, true);
 
-      recognition.onerror = (e) => {
-        console.warn('SpeechRecognition error:', e);
-        isListening = false;
-        micBtn.classList.remove('mic-active');
-        micBtn.textContent = '🎙️ Talk (Mic + AI)';
-        statusDot.className = 'dot ready';
-        statusText.textContent = e.error === 'not-allowed' ? 'Mic access denied in browser' : 'Ready — Idle Standing';
-      };
-
-      micBtn.addEventListener('click', () => {
-        if (isListening) {
-          recognition.stop();
-        } else {
-          speechInput.value = '';
-          recognition.start();
-        }
-      });
-    } else {
-      micBtn.title = 'Browser SpeechRecognition not supported in this browser';
-      micBtn.addEventListener('click', () => {
-        alert('SpeechRecognition is supported in Chrome/Edge/Safari. For Firefox, use the text input + "Ask AI" button!');
-      });
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return buffer;
     }
+
+    function bufferToBase64(buffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      const len = bytes.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
+    }
+
+    async function startMicRecording() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        micNode = audioCtx.createMediaStreamSource(mediaStream);
+        scriptProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+        recordedPcm = [];
+
+        scriptProcessor.onaudioprocess = (e) => {
+          if (!isRecordingMic) return;
+          const input = e.inputBuffer.getChannelData(0);
+          for (let i = 0; i < input.length; i++) {
+            recordedPcm.push(input[i]);
+          }
+        };
+
+        micNode.connect(scriptProcessor);
+        scriptProcessor.connect(audioCtx.destination);
+
+        isRecordingMic = true;
+        micBtn.classList.add('mic-active');
+        micBtn.textContent = '🛑 Stop & Send to AI';
+        statusDot.className = 'dot listening';
+        statusText.textContent = 'Recording microphone... Speak now!';
+      } catch (err) {
+        console.error('Microphone access error:', err);
+        alert('Could not access microphone: ' + err.message + '\nPlease allow microphone access in your browser bar.');
+        statusText.textContent = 'Microphone permission denied.';
+      }
+    }
+
+    async function stopMicRecording() {
+      if (!isRecordingMic) return;
+      isRecordingMic = false;
+      micBtn.classList.remove('mic-active');
+      micBtn.textContent = '🎙️ Talk (Mic + AI)';
+      micBtn.disabled = true;
+      statusDot.className = 'dot';
+      statusText.textContent = 'Sending voice to OpenRouter AI...';
+
+      if (scriptProcessor) scriptProcessor.disconnect();
+      if (micNode) micNode.disconnect();
+      if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+      if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+
+      if (recordedPcm.length < 8000) { // Less than 0.5 sec
+        statusDot.className = 'dot ready';
+        statusText.textContent = 'Recording was too short. Speak and click stop when done.';
+        micBtn.disabled = false;
+        return;
+      }
+
+      const wavBuffer = encodeWAV(recordedPcm, 16000);
+      const audioBase64 = bufferToBase64(wavBuffer);
+
+      try {
+        const res = await fetch('/api/audio-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audio_base64: audioBase64,
+            audio_format: 'wav',
+            history: chatHistory,
+            use_server_tts: audioToggle.checked
+          })
+        });
+        const data = await res.json();
+        if (data.reply_text) {
+          speechInput.value = data.reply_text;
+          chatHistory.push({ role: 'assistant', content: data.reply_text });
+          playSpeechPayload(data, data.reply_text);
+        } else {
+          statusText.textContent = 'No reply received from OpenRouter audio model.';
+        }
+      } catch (e) {
+        console.error('Error sending audio to /api/audio-chat:', e);
+        statusText.textContent = 'Error sending audio to OpenRouter.';
+      } finally {
+        micBtn.disabled = false;
+      }
+    }
+
+    micBtn.addEventListener('click', () => {
+      if (isRecordingMic) {
+        stopMicRecording();
+      } else {
+        startMicRecording();
+      }
+    });
 
     // 4. Real-Time Render & Animation Loop
     const clock = new THREE.Clock();

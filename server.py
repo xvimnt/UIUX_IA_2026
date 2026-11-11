@@ -46,6 +46,8 @@ os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 # Fastest ultra-low-latency model on OpenRouter (benchmarked ~0.2s response time)
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.2-1b-instruct")
+# Multimodal audio-in model on OpenRouter for direct voice microphone input
+OPENROUTER_AUDIO_MODEL = os.environ.get("OPENROUTER_AUDIO_MODEL", "google/gemini-2.5-flash")
 
 # CC3+ Viseme mapping (matches Girl12's morph targets in girl12.glb)
 CHAR_TO_VISEME = {
@@ -224,6 +226,67 @@ def query_openrouter_llm(user_message: str, history: list[dict] | None = None) -
         return f"I heard you say: {user_message}. (OpenRouter fallback)"
 
 
+def query_openrouter_audio(audio_base64: str, audio_format: str = "wav", history: list[dict] | None = None) -> str:
+    """
+    Send raw recorded microphone audio directly to OpenRouter multimodal audio model
+    (google/gemini-2.5-flash) which understands speech directly without browser speech recognition dependencies!
+    """
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are Girl12, an expressive and friendly 3D AI companion. "
+                "Listen to the user speaking in the audio clip and respond concisely in 1 to 2 spoken sentences "
+                "so your speech flows naturally."
+            ),
+        }
+    ]
+    if history:
+        for msg in history[-4:]:
+            if msg.get("role") in ("user", "assistant") and msg.get("content"):
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Listen to my voice in this audio and respond to what I said:"},
+            {
+                "type": "input_audio",
+                "input_audio": {
+                    "data": audio_base64,
+                    "format": audio_format,
+                },
+            },
+        ],
+    })
+
+    payload = {
+        "model": OPENROUTER_AUDIO_MODEL,
+        "messages": messages,
+        "max_tokens": 120,
+        "temperature": 0.7,
+    }
+
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8765",
+            "X-Title": "Girl12 3D Avatar",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=16) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"OpenRouter Audio API error: {e}")
+        return "I could hear your audio, but I had trouble understanding the words. Could you say that again?"
+
+
 class AvatarRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
@@ -236,7 +299,38 @@ class AvatarRequestHandler(SimpleHTTPRequestHandler):
         except Exception:
             payload = {}
 
-        if self.path == "/api/chat":
+        if self.path == "/api/audio-chat":
+            audio_base64 = (payload.get("audio_base64") or "").strip()
+            audio_format = payload.get("audio_format") or "wav"
+            history = payload.get("history") or []
+            use_server_tts = bool(payload.get("use_server_tts", True))
+
+            if not audio_base64:
+                self._send_json(400, {"error": "Please provide 'audio_base64'."})
+                return
+
+            # 1. Listen and respond directly using OpenRouter Audio Multimodal Model
+            llm_reply = query_openrouter_audio(audio_base64, audio_format=audio_format, history=history)
+
+            # 2. Synthesize avatar speaking voice
+            audio_url, audio_dur = (None, None)
+            if use_server_tts:
+                audio_url, audio_dur = synthesize_voice_model_placeholder(llm_reply)
+
+            # 3. Compute viseme lip-sync timeline scaled to exact audio length
+            visemes, duration = text_to_viseme_timeline(llm_reply, target_duration=audio_dur)
+
+            self._send_json(
+                200,
+                {
+                    "reply_text": llm_reply,
+                    "duration": duration,
+                    "audio_url": audio_url,
+                    "visemes": visemes,
+                    "model": OPENROUTER_AUDIO_MODEL,
+                },
+            )
+        elif self.path == "/api/chat":
             user_message = (payload.get("message") or payload.get("text") or "").strip()
             history = payload.get("history") or []
             use_server_tts = bool(payload.get("use_server_tts", True))
