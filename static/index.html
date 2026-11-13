@@ -83,19 +83,20 @@
     }
     .input-row {
       display: flex;
+      align-items: center;
       gap: 10px;
     }
     textarea {
       flex: 1;
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       color: var(--text);
-      padding: 10px 14px;
+      padding: 12px 14px;
       font-size: 14px;
       line-height: 1.45;
       resize: none;
-      height: 62px;
+      height: 50px;
       outline: none;
       transition: border-color 0.2s;
     }
@@ -104,8 +105,23 @@
     }
     .btn-col {
       display: flex;
-      flex-direction: column;
-      gap: 6px;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+    }
+    button.round-btn {
+      width: 46px !important;
+      height: 46px !important;
+      border-radius: 50% !important;
+      padding: 0 !important;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .round-btn svg {
+      width: 20px;
+      height: 20px;
     }
     button {
       background: var(--accent);
@@ -152,6 +168,118 @@
       cursor: pointer;
       user-select: none;
     }
+    .speech-bubble {
+      position: absolute;
+      top: 0;
+      left: 0;
+      max-width: min(320px, 40vw);
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 14px 18px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      font-weight: 400;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+      z-index: 10;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+      text-align: left;
+    }
+    .speech-bubble.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .speech-bubble::after {
+      content: '';
+      position: absolute;
+      top: 18px;
+      left: -10px;
+      border-width: 8px 10px 8px 0;
+      border-style: solid;
+      border-color: transparent rgba(22, 25, 35, 0.88) transparent transparent;
+    }
+    .cam-pad {
+      position: absolute;
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: repeat(3, 34px);
+      gap: 6px;
+      z-index: 10;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    }
+    .cam-pad button {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cam-pad button:hover {
+      background: rgba(255, 255, 255, 0.18);
+    }
+    .cam-pad .cam-divider {
+      grid-column: 1 / -1;
+      height: 1px;
+      background: var(--border);
+      margin: 2px 0;
+    }
+    .floating-cam-bar {
+      position: absolute;
+      left: 24px;
+      top: 45%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10;
+    }
+    .cam-fab {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      height: auto;
+    }
+    .cam-fab:hover {
+      background: rgba(38, 43, 60, 0.95);
+      border-color: rgba(255, 255, 255, 0.28);
+      transform: translateX(2px);
+    }
+    .cam-fab.active {
+      border-color: var(--accent);
+      background: rgba(225, 29, 72, 0.18);
+    }
+    .cam-fab svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
   </style>
 
   <!-- Three.js & GLTFLoader via CDN importmap -->
@@ -167,33 +295,36 @@
 <body>
   <div id="canvas-container"></div>
 
+  <div id="speech-bubble" class="speech-bubble" aria-live="polite">
+    <span id="speech-bubble-text"></span>
+  </div>
+
+  <div class="cam-pad" aria-label="Manual Camera Controls">
+    <div></div>
+    <button id="cam-up" title="Tilt Up">▲</button>
+    <div></div>
+    <button id="cam-left" title="Orbit Left">◀</button>
+    <button id="cam-reset" title="Reset View">⟲</button>
+    <button id="cam-right" title="Orbit Right">▶</button>
+    <div></div>
+    <button id="cam-down" title="Tilt Down">▼</button>
+    <div></div>
+    <div class="cam-divider"></div>
+    <button id="cam-zoom-in" title="Zoom In">+</button>
+    <div></div>
+    <button id="cam-zoom-out" title="Zoom Out">−</button>
+  </div>
+
   <div class="hud">
-    <div class="hud-header">
-      <span><strong>Girl12</strong> — Real-Time 3D Lip-Sync & AI Conversational Avatar</span>
-      <span class="status-badge">
-        <span id="status-dot" class="dot"></span>
-        <span id="status-text">Loading 3D Model (10 MB)...</span>
-      </span>
-    </div>
-
     <div class="input-row">
-      <textarea id="speech-input" placeholder="Type a message or click 🎙️ to talk with AI via OpenRouter...">What can you do?</textarea>
+      <textarea id="speech-input" placeholder="Ask Girl12 anything or click the mic to talk..."></textarea>
       <div class="btn-col">
-        <button id="chat-btn" disabled title="Ask OpenRouter LLM and have Girl12 speak the answer">Ask AI (OpenRouter)</button>
-        <button id="speak-btn" class="secondary" disabled title="Have her read the exact text directly">Read Directly</button>
-        <button id="mic-btn" class="secondary" disabled title="Talk using your Microphone">🎙️ Talk (Mic + AI)</button>
-      </div>
-    </div>
-
-    <div class="controls-footer">
-      <label class="toggle">
-        <input type="checkbox" id="audio-toggle" checked />
-        <span>Play Voice Audio (TTS / Voice Model Hook)</span>
-      </label>
-      <div class="cam-buttons">
-        <button class="secondary" id="cam-upper">Upper Body + Hands</button>
-        <button class="secondary" id="cam-closeup">Face Close-Up</button>
-        <button class="secondary" id="cam-full">Full Standing</button>
+        <button id="chat-btn" class="round-btn" disabled title="Send message to AI (Enter)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+        <button id="mic-btn" class="round-btn secondary" disabled title="Talk using your Microphone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -204,18 +335,27 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
     const container = document.getElementById('canvas-container');
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
+    const statusDot = { className: '', classList: { add() {}, contains() { return false; } } };
+    const statusText = { textContent: '' };
     const chatBtn = document.getElementById('chat-btn');
-    const speakBtn = document.getElementById('speak-btn');
     const micBtn = document.getElementById('mic-btn');
     const speechInput = document.getElementById('speech-input');
-    const audioToggle = document.getElementById('audio-toggle');
+    const speechBubble = document.getElementById('speech-bubble');
+    const speechBubbleText = document.getElementById('speech-bubble-text');
+
+    function showSpeechBubble(text) {
+      if (!text) {
+        speechBubble.classList.remove('visible');
+        return;
+      }
+      speechBubbleText.textContent = text;
+      speechBubble.classList.add('visible');
+    }
 
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.05, 50);
-    camera.position.set(0, 1.42, 1.35);
+    camera.position.set(0, 1.64, 1.30);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -225,8 +365,14 @@
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1.38, 0);
+    controls.target.set(0, 1.54, 0);
     controls.enableDamping = true;
+    controls.minDistance = 0.98;
+    controls.maxDistance = 2.60;
+    controls.minPolarAngle = 0.95;
+    controls.maxPolarAngle = 1.72;
+    controls.minAzimuthAngle = -0.85;
+    controls.maxAzimuthAngle = 0.85;
     controls.update();
 
     // Lighting
@@ -242,18 +388,204 @@
     rimLight.position.set(-1.5, 1.8, -1.5);
     scene.add(rimLight);
 
-    // Camera Presets
-    document.getElementById('cam-upper').addEventListener('click', () => {
-      camera.position.set(0, 1.42, 1.35);
-      controls.target.set(0, 1.38, 0);
+    // 1b. Build 3D YouTuber Studio Environment (wall, floor, furniture, plants, artworks, YouTube trophy)
+    function buildYouTuberStudio() {
+      const studio = new THREE.Group();
+
+      // Floor & Back Wall
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x241f1c, roughness: 0.75 });
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 8), floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      studio.add(floor);
+
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x1c202b, roughness: 0.9 });
+      const backWall = new THREE.Mesh(new THREE.PlaneGeometry(10, 5), wallMat);
+      backWall.position.set(0, 2.5, -1.65);
+      studio.add(backWall);
+
+      // Warm studio LED accent strip on back wall
+      const ledMat = new THREE.MeshBasicMaterial({ color: 0xff6b8b });
+      const ledStrip = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.025, 0.02), ledMat);
+      ledStrip.position.set(0, 2.45, -1.63);
+      studio.add(ledStrip);
+
+      const studioGlow = new THREE.PointLight(0xff7eb3, 1.8, 5);
+      studioGlow.position.set(0, 2.3, -1.3);
+      studio.add(studioGlow);
+
+      // Furniture: Right-side Credenza / Studio Desk
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3d2e, roughness: 0.6 });
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4, metalness: 0.6 });
+      const credenza = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 0.45), woodMat);
+      credenza.position.set(1.05, 0.55, -1.35);
+      studio.add(credenza);
+      [[-0.48, -0.18], [0.48, -0.18], [-0.48, 0.18], [0.48, 0.18]].forEach(([dx, dz]) => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.015, 0.3, 10), legMat);
+        leg.position.set(1.05 + dx, 0.15, -1.35 + dz);
+        studio.add(leg);
+      });
+
+      // Furniture: Left-side Floating Shelf
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.04, 0.25), woodMat);
+      shelf.position.set(-0.95, 1.35, -1.51);
+      studio.add(shelf);
+
+      // Books on Floating Shelf
+      const bookColors = [0xe11d48, 0x3b82f6, 0xf59e0b, 0x10b981];
+      bookColors.forEach((col, idx) => {
+        const book = new THREE.Mesh(
+          new THREE.BoxGeometry(0.045, 0.22 - idx * 0.015, 0.16),
+          new THREE.MeshStandardMaterial({ color: col, roughness: 0.7 })
+        );
+        book.position.set(-1.2 + idx * 0.055, 1.48 - idx * 0.007, -1.5);
+        studio.add(book);
+      });
+
+      // Tall Potted Plant (Left)
+      const potMat = new THREE.MeshStandardMaterial({ color: 0xd6d3d1, roughness: 0.5 });
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.32, 18), potMat);
+      pot.position.set(-1.12, 0.16, -1.15);
+      studio.add(pot);
+
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x2d6a4f, roughness: 0.55 });
+      for (let i = 0; i < 9; i++) {
+        const angle = (i / 9) * Math.PI * 2;
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.42, 6), leafMat);
+        leaf.position.set(
+          -1.12 + Math.cos(angle) * 0.12,
+          0.48 + (i % 3) * 0.12,
+          -1.15 + Math.sin(angle) * 0.12
+        );
+        leaf.rotation.z = -Math.cos(angle) * 0.45;
+        leaf.rotation.x = Math.sin(angle) * 0.45;
+        studio.add(leaf);
+      }
+
+      // Small Desk Plant on Credenza (Right)
+      const smallPot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, 0.12, 14), potMat);
+      smallPot.position.set(1.32, 0.88, -1.32);
+      studio.add(smallPot);
+      const smallBush = new THREE.Mesh(new THREE.DodecahedronGeometry(0.11, 1), leafMat);
+      smallBush.position.set(1.32, 1.0, -1.32);
+      studio.add(smallBush);
+
+      // Framed Artworks on Back Wall
+      function addArtwork(x, y, w, h, bgColor, accentColor) {
+        const frame = new THREE.Mesh(
+          new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.03),
+          new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.4 })
+        );
+        frame.position.set(x, y, -1.63);
+        studio.add(frame);
+
+        const canvas = new THREE.Mesh(
+          new THREE.BoxGeometry(w, h, 0.035),
+          new THREE.MeshStandardMaterial({ color: bgColor, roughness: 0.8 })
+        );
+        canvas.position.set(x, y, -1.625);
+        studio.add(canvas);
+
+        const shape = new THREE.Mesh(
+          new THREE.CircleGeometry(Math.min(w, h) * 0.28, 24),
+          new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.6 })
+        );
+        shape.position.set(x, y, -1.605);
+        studio.add(shape);
+      }
+      addArtwork(-0.88, 1.92, 0.44, 0.56, 0xfef3c7, 0xe11d48);
+      addArtwork(-0.34, 1.98, 0.34, 0.42, 0xe0f2fe, 0x0284c7);
+
+      // YouTube Creator Award Trophy (Silver/Gold Play Button Plaque on Wall)
+      const plaqueGroup = new THREE.Group();
+      const plaqueBase = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.24, 0.025),
+        new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.3, metalness: 0.7 })
+      );
+      plaqueGroup.add(plaqueBase);
+
+      const silverBorder = new THREE.Mesh(
+        new THREE.BoxGeometry(0.34, 0.26, 0.015),
+        new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.2, metalness: 0.9 })
+      );
+      silverBorder.position.z = -0.006;
+      plaqueGroup.add(silverBorder);
+
+      const playBg = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.10, 0.015),
+        new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.2, metalness: 0.95 })
+      );
+      playBg.position.set(0, 0.015, 0.012);
+      plaqueGroup.add(playBg);
+
+      const playTriangle = new THREE.Mesh(
+        new THREE.ConeGeometry(0.028, 0.045, 3),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.5 })
+      );
+      playTriangle.rotation.z = -Math.PI / 2;
+      playTriangle.rotation.x = Math.PI / 2;
+      playTriangle.position.set(0.004, 0.015, 0.022);
+      plaqueGroup.add(playTriangle);
+
+      plaqueGroup.position.set(0.82, 1.78, -1.62);
+      studio.add(plaqueGroup);
+
+      scene.add(studio);
+    }
+    buildYouTuberStudio();
+
+    // Dynamic YouTuber-style Camera Shots (eye-level with proper headroom)
+    const CAM_SHOTS = [
+      { pos: new THREE.Vector3(0, 1.64, 1.30), target: new THREE.Vector3(0, 1.54, 0) },       // Eye-Level Medium Front
+      { pos: new THREE.Vector3(0.03, 1.65, 0.65), target: new THREE.Vector3(0, 1.61, 0) },    // Face Close-Up
+      { pos: new THREE.Vector3(-0.38, 1.64, 1.15), target: new THREE.Vector3(0, 1.55, 0) },   // Left Three-Quarter
+      { pos: new THREE.Vector3(0.38, 1.64, 1.15), target: new THREE.Vector3(0, 1.55, 0) },    // Right Three-Quarter
+      { pos: new THREE.Vector3(0.12, 1.62, 1.85), target: new THREE.Vector3(0, 1.48, 0) },    // Farther Studio Shot
+    ];
+    let activeShotIdx = 0;
+    let nextCamSwitchTime = 0;
+    let manualCamUntil = 0;
+
+    // Blender-style Manual Camera Controls (with safe studio limits)
+    function nudgeCamera(dAzimuth, dPolar, dZoom) {
+      manualCamUntil = performance.now() / 1000 + 8.0;
+      const offset = camera.position.clone().sub(controls.target);
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+
+      spherical.theta = THREE.MathUtils.clamp(
+        spherical.theta + dAzimuth,
+        controls.minAzimuthAngle,
+        controls.maxAzimuthAngle
+      );
+      spherical.phi = THREE.MathUtils.clamp(
+        spherical.phi + dPolar,
+        controls.minPolarAngle,
+        controls.maxPolarAngle
+      );
+      spherical.radius = THREE.MathUtils.clamp(
+        spherical.radius + dZoom,
+        controls.minDistance,
+        controls.maxDistance
+      );
+
+      offset.setFromSpherical(spherical);
+      camera.position.copy(controls.target).add(offset);
+      controls.update();
+    }
+
+    document.getElementById('cam-left').addEventListener('click', () => nudgeCamera(-0.18, 0, 0));
+    document.getElementById('cam-right').addEventListener('click', () => nudgeCamera(0.18, 0, 0));
+    document.getElementById('cam-up').addEventListener('click', () => nudgeCamera(0, -0.08, 0));
+    document.getElementById('cam-down').addEventListener('click', () => nudgeCamera(0, 0.08, 0));
+    document.getElementById('cam-zoom-in').addEventListener('click', () => nudgeCamera(0, 0, -0.22));
+    document.getElementById('cam-zoom-out').addEventListener('click', () => nudgeCamera(0, 0, 0.22));
+    document.getElementById('cam-reset').addEventListener('click', () => {
+      manualCamUntil = 0;
+      camera.position.copy(CAM_SHOTS[0].pos);
+      controls.target.copy(CAM_SHOTS[0].target);
+      controls.update();
     });
-    document.getElementById('cam-closeup').addEventListener('click', () => {
-      camera.position.set(0, 1.63, 0.58);
-      controls.target.set(0, 1.61, 0);
-    });
-    document.getElementById('cam-full').addEventListener('click', () => {
-      camera.position.set(0, 1.05, 2.85);
-      controls.target.set(0, 0.95, 0);
+    controls.addEventListener('start', () => {
+      manualCamUntil = performance.now() / 1000 + 8.0;
     });
 
     // 2. Load Girl12 GLB Model & Setup Rig References
@@ -323,7 +655,6 @@
         statusDot.classList.add('ready');
         statusText.textContent = 'Ready — Idle Standing';
         chatBtn.disabled = false;
-        speakBtn.disabled = false;
         micBtn.disabled = false;
       },
       (xhr) => {
@@ -367,12 +698,12 @@
         }
       };
 
-      if (audioToggle.checked && data.audio_url) {
+      if (data.audio_url) {
         currentAudio = new Audio(data.audio_url);
         currentAudio.addEventListener('play', startSyncedPlayback, { once: true });
         currentAudio.addEventListener('ended', () => { isSpeaking = false; });
         currentAudio.play().catch(e => console.warn('Audio play error:', e));
-      } else if (audioToggle.checked && 'speechSynthesis' in window) {
+      } else if ('speechSynthesis' in window) {
         const utter = new SpeechSynthesisUtterance(spokenText);
         utter.onstart = startSyncedPlayback;
         utter.onend = () => { isSpeaking = false; };
@@ -389,8 +720,8 @@
       const userText = (customPrompt !== undefined ? customPrompt : speechInput.value).trim();
       if (!userText) return;
 
+      speechInput.value = '';
       chatBtn.disabled = true;
-      speakBtn.disabled = true;
       statusDot.className = 'dot';
       statusText.textContent = 'Thinking with OpenRouter LLM...';
 
@@ -407,12 +738,12 @@
           body: JSON.stringify({
             message: userText,
             history: chatHistory,
-            use_server_tts: audioToggle.checked
+            use_server_tts: true
           })
         });
         const data = await res.json();
         if (data.reply_text) {
-          speechInput.value = data.reply_text;
+          showSpeechBubble(data.reply_text);
           chatHistory.push({ role: 'user', content: userText });
           chatHistory.push({ role: 'assistant', content: data.reply_text });
           playSpeechPayload(data, data.reply_text);
@@ -424,45 +755,16 @@
         statusText.textContent = 'Error connecting to /api/chat';
       } finally {
         chatBtn.disabled = false;
-        speakBtn.disabled = false;
-      }
-    }
-
-    // 3b. Direct Text-to-Speech (/api/speak)
-    async function triggerDirectSpeak() {
-      const text = speechInput.value.trim();
-      if (!text) return;
-
-      chatBtn.disabled = true;
-      speakBtn.disabled = true;
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-      }
-      window.speechSynthesis?.cancel();
-
-      try {
-        const res = await fetch('/api/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            use_server_tts: audioToggle.checked
-          })
-        });
-        const data = await res.json();
-        playSpeechPayload(data, text);
-      } catch (e) {
-        console.error(e);
-        statusText.textContent = 'Error calling /api/speak';
-      } finally {
-        chatBtn.disabled = false;
-        speakBtn.disabled = false;
       }
     }
 
     chatBtn.addEventListener('click', () => triggerAiChat());
-    speakBtn.addEventListener('click', triggerDirectSpeak);
+    speechInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        triggerAiChat();
+      }
+    });
 
     // 3c. Reliable Microphone Audio Recording via MediaRecorder + Web Audio API
     // Records clean 16kHz WAV audio directly from your microphone and sends it to OpenRouter
@@ -578,12 +880,12 @@
             audio_base64: audioBase64,
             audio_format: 'wav',
             history: chatHistory,
-            use_server_tts: audioToggle.checked
+            use_server_tts: true
           })
         });
         const data = await res.json();
         if (data.reply_text) {
-          speechInput.value = data.reply_text;
+          showSpeechBubble(data.reply_text);
           chatHistory.push({ role: 'assistant', content: data.reply_text });
           playSpeechPayload(data, data.reply_text);
         } else {
@@ -615,6 +917,28 @@
       const now = performance.now() / 1000;
 
       controls.update();
+
+      // Automatic YouTuber-style camera switching while speaking (paused briefly if user manually adjusted)
+      if (now > manualCamUntil) {
+        if (isSpeaking) {
+          if (now > nextCamSwitchTime) {
+            let nextIdx = activeShotIdx;
+            while (nextIdx === activeShotIdx) {
+              nextIdx = Math.floor(Math.random() * CAM_SHOTS.length);
+            }
+            activeShotIdx = nextIdx;
+            nextCamSwitchTime = now + 2.8 + Math.random() * 1.4;
+          }
+          const shot = CAM_SHOTS[activeShotIdx];
+          camera.position.lerp(shot.pos, Math.min(1.0, dt * 3.2));
+          controls.target.lerp(shot.target, Math.min(1.0, dt * 3.2));
+        } else {
+          activeShotIdx = 0;
+          nextCamSwitchTime = 0;
+          camera.position.lerp(CAM_SHOTS[0].pos, Math.min(1.0, dt * 2.5));
+          controls.target.lerp(CAM_SHOTS[0].target, Math.min(1.0, dt * 2.5));
+        }
+      }
 
       // Update skeletal hand-gesture animation
       if (mixer && gestureAction) {
@@ -710,6 +1034,18 @@
       }
 
       renderer.render(scene, camera);
+
+      // Anchor speech bubble tip right next to her mouth in 3D space
+      if (speechBubble.classList.contains('visible')) {
+        const mouthAnchor = new THREE.Vector3(0.09, 1.58, 0.06);
+        mouthAnchor.project(camera);
+        const screenX = (mouthAnchor.x * 0.5 + 0.5) * window.innerWidth;
+        const screenY = (-mouthAnchor.y * 0.5 + 0.5) * window.innerHeight;
+        const clampedX = Math.min(window.innerWidth - speechBubble.offsetWidth - 16, Math.max(16, screenX + 14));
+        const clampedY = Math.min(window.innerHeight - 160, Math.max(16, screenY - 24));
+        speechBubble.style.left = `${clampedX}px`;
+        speechBubble.style.top = `${clampedY}px`;
+      }
     }
 
     animate();
