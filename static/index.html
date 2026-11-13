@@ -239,6 +239,45 @@
       background: var(--border);
       margin: 2px 0;
     }
+    .webcam-pip {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 150px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      z-index: 10;
+    }
+    .webcam-pip video {
+      width: 100%;
+      height: 112px;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: block;
+    }
+    .webcam-status {
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .webcam-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      flex-shrink: 0;
+    }
+    .webcam-dot.recording {
+      background: #3b82f6;
+      box-shadow: 0 0 8px #3b82f6;
+    }
     .floating-cam-bar {
       position: absolute;
       left: 24px;
@@ -295,6 +334,14 @@
 <body>
   <div id="canvas-container"></div>
 
+  <div class="webcam-pip" id="webcam-pip">
+    <video id="webcam-video" autoplay playsinline muted></video>
+    <div class="webcam-status">
+      <span class="webcam-dot" id="webcam-dot"></span>
+      <span id="webcam-label">Starting camera...</span>
+    </div>
+  </div>
+
   <div id="speech-bubble" class="speech-bubble" aria-live="polite">
     <span id="speech-bubble-text"></span>
   </div>
@@ -317,13 +364,10 @@
 
   <div class="hud">
     <div class="input-row">
-      <textarea id="speech-input" placeholder="Ask Girl12 anything or click the mic to talk..."></textarea>
+      <textarea id="speech-input" placeholder="Ask Girl12 anything, or just look at the camera and speak..."></textarea>
       <div class="btn-col">
         <button id="chat-btn" class="round-btn" disabled title="Send message to AI (Enter)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
-        <button id="mic-btn" class="round-btn secondary" disabled title="Talk using your Microphone">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
       </div>
     </div>
@@ -338,7 +382,6 @@
     const statusDot = { className: '', classList: { add() {}, contains() { return false; } } };
     const statusText = { textContent: '' };
     const chatBtn = document.getElementById('chat-btn');
-    const micBtn = document.getElementById('mic-btn');
     const speechInput = document.getElementById('speech-input');
     const speechBubble = document.getElementById('speech-bubble');
     const speechBubbleText = document.getElementById('speech-bubble-text');
@@ -655,7 +698,6 @@
         statusDot.classList.add('ready');
         statusText.textContent = 'Ready — Idle Standing';
         chatBtn.disabled = false;
-        micBtn.disabled = false;
       },
       (xhr) => {
         if (xhr.total) {
@@ -766,14 +808,16 @@
       }
     });
 
-    // 3c. Reliable Microphone Audio Recording via MediaRecorder + Web Audio API
-    // Records clean 16kHz WAV audio directly from your microphone and sends it to OpenRouter
-    let mediaStream = null;
-    let audioCtx = null;
-    let micNode = null;
-    let scriptProcessor = null;
+    // 3c. Automatic Webcam Person Detection + Microphone Voice Activity Detection (VAD)
+    const webcamVideo = document.getElementById('webcam-video');
+    const webcamDot = document.getElementById('webcam-dot');
+    const webcamLabel = document.getElementById('webcam-label');
+
     let recordedPcm = [];
-    let isRecordingMic = false;
+    let isAutoRecording = false;
+    let isSendingAudio = false;
+    let lastSpeechTime = 0;
+    let personPresent = true; // Updated by FaceDetector or motion/presence check
 
     function encodeWAV(samples, sampleRate = 16000) {
       const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -789,13 +833,13 @@
       view.setUint32(4, 36 + samples.length * 2, true);
       writeString(8, 'WAVE');
       writeString(12, 'fmt ');
-      view.setUint32(16, 16, true); // PCM chunk size
-      view.setUint16(20, 1, true);  // linear quantization
-      view.setUint16(22, 1, true);  // mono
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
       view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * 2, true); // byte rate
-      view.setUint16(32, 2, true);  // block align
-      view.setUint16(34, 16, true); // bits per sample
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
       writeString(36, 'data');
       view.setUint32(40, samples.length * 2, true);
 
@@ -810,66 +854,19 @@
     function bufferToBase64(buffer) {
       let binary = '';
       const bytes = new Uint8Array(buffer);
-      const len = bytes.byteLength;
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < bytes.byteLength; i++) {
         binary += String.fromCharCode(bytes[i]);
       }
       return window.btoa(binary);
     }
 
-    async function startMicRecording() {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        micNode = audioCtx.createMediaStreamSource(mediaStream);
-        scriptProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
-        recordedPcm = [];
+    async function sendCapturedVoice(pcmSamples) {
+      if (isSendingAudio || pcmSamples.length < 8000) return;
+      isSendingAudio = true;
+      webcamDot.classList.remove('recording');
+      webcamLabel.textContent = 'Thinking...';
 
-        scriptProcessor.onaudioprocess = (e) => {
-          if (!isRecordingMic) return;
-          const input = e.inputBuffer.getChannelData(0);
-          for (let i = 0; i < input.length; i++) {
-            recordedPcm.push(input[i]);
-          }
-        };
-
-        micNode.connect(scriptProcessor);
-        scriptProcessor.connect(audioCtx.destination);
-
-        isRecordingMic = true;
-        micBtn.classList.add('mic-active');
-        micBtn.textContent = '🛑 Stop & Send to AI';
-        statusDot.className = 'dot listening';
-        statusText.textContent = 'Recording microphone... Speak now!';
-      } catch (err) {
-        console.error('Microphone access error:', err);
-        alert('Could not access microphone: ' + err.message + '\nPlease allow microphone access in your browser bar.');
-        statusText.textContent = 'Microphone permission denied.';
-      }
-    }
-
-    async function stopMicRecording() {
-      if (!isRecordingMic) return;
-      isRecordingMic = false;
-      micBtn.classList.remove('mic-active');
-      micBtn.textContent = '🎙️ Talk (Mic + AI)';
-      micBtn.disabled = true;
-      statusDot.className = 'dot';
-      statusText.textContent = 'Sending voice to OpenRouter AI...';
-
-      if (scriptProcessor) scriptProcessor.disconnect();
-      if (micNode) micNode.disconnect();
-      if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
-      if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
-
-      if (recordedPcm.length < 8000) { // Less than 0.5 sec
-        statusDot.className = 'dot ready';
-        statusText.textContent = 'Recording was too short. Speak and click stop when done.';
-        micBtn.disabled = false;
-        return;
-      }
-
-      const wavBuffer = encodeWAV(recordedPcm, 16000);
+      const wavBuffer = encodeWAV(pcmSamples, 16000);
       const audioBase64 = bufferToBase64(wavBuffer);
 
       try {
@@ -888,24 +885,90 @@
           showSpeechBubble(data.reply_text);
           chatHistory.push({ role: 'assistant', content: data.reply_text });
           playSpeechPayload(data, data.reply_text);
-        } else {
-          statusText.textContent = 'No reply received from OpenRouter audio model.';
         }
       } catch (e) {
-        console.error('Error sending audio to /api/audio-chat:', e);
-        statusText.textContent = 'Error sending audio to OpenRouter.';
+        console.error('Error sending auto-captured audio:', e);
       } finally {
-        micBtn.disabled = false;
+        isSendingAudio = false;
+        webcamLabel.textContent = personPresent ? 'Watching & Listening' : 'Waiting for person...';
       }
     }
 
-    micBtn.addEventListener('click', () => {
-      if (isRecordingMic) {
-        stopMicRecording();
-      } else {
-        startMicRecording();
+    async function initAutoWebcamAndMic() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        webcamVideo.srcObject = stream;
+        webcamLabel.textContent = 'Watching & Listening';
+
+        // Optional FaceDetector API for person detection
+        const faceDetector = ('FaceDetector' in window) ? new window.FaceDetector({ fastMode: true }) : null;
+        if (faceDetector) {
+          setInterval(async () => {
+            if (webcamVideo.readyState >= 2) {
+              try {
+                const faces = await faceDetector.detect(webcamVideo);
+                personPresent = faces.length > 0;
+                if (!isAutoRecording && !isSendingAudio) {
+                  webcamLabel.textContent = personPresent ? 'Watching & Listening' : 'Waiting for person...';
+                }
+              } catch (_) {}
+            }
+          }, 700);
+        }
+
+        // Microphone Voice Activity Detection (VAD)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const micSource = audioCtx.createMediaStreamSource(stream);
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+        processor.onaudioprocess = (e) => {
+          if (isSpeaking || isSendingAudio || !personPresent) {
+            isAutoRecording = false;
+            recordedPcm = [];
+            return;
+          }
+
+          const input = e.inputBuffer.getChannelData(0);
+          let sumSq = 0;
+          for (let i = 0; i < input.length; i++) {
+            sumSq += input[i] * input[i];
+          }
+          const rms = Math.sqrt(sumSq / input.length);
+          const nowMs = performance.now();
+
+          if (rms > 0.025) {
+            if (!isAutoRecording) {
+              isAutoRecording = true;
+              recordedPcm = [];
+              webcamDot.classList.add('recording');
+              webcamLabel.textContent = 'Listening to you...';
+            }
+            lastSpeechTime = nowMs;
+            for (let i = 0; i < input.length; i++) {
+              recordedPcm.push(input[i]);
+            }
+          } else if (isAutoRecording) {
+            for (let i = 0; i < input.length; i++) {
+              recordedPcm.push(input[i]);
+            }
+            if (nowMs - lastSpeechTime > 1100) {
+              isAutoRecording = false;
+              const captured = recordedPcm.slice();
+              recordedPcm = [];
+              sendCapturedVoice(captured);
+            }
+          }
+        };
+
+        micSource.connect(processor);
+        processor.connect(audioCtx.destination);
+      } catch (err) {
+        console.warn('Webcam/Mic auto-init error:', err);
+        webcamLabel.textContent = 'Camera/Mic blocked';
       }
-    });
+    }
+
+    initAutoWebcamAndMic();
 
     // 4. Real-Time Render & Animation Loop
     const clock = new THREE.Clock();
