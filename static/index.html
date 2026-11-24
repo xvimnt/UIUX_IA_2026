@@ -610,6 +610,7 @@
     }
 
     async function sendCapturedVoice(pcmSamples) {
+      return; // disabled: using free browser speech recognition instead 
       if (isSendingAudio || pcmSamples.length < 8000) return;
       isSendingAudio = true;
       webcamDot.classList.remove('recording');
@@ -852,6 +853,33 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
-  </script>
+  
+    // Voice recognition (free, browser-based): Chrome or Edge
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const note = (t) => { try { speechInput.placeholder = t; } catch (e) {} console.log(t); };
+    if (!SR) {
+      note('VOICE: not supported in this browser');
+    } else {
+      const recog = new SR();
+      recog.lang = 'fr-FR';
+      recog.continuous = true;
+      recog.interimResults = false;
+      recog.onstart = () => note('VOICE: listening...');
+      recog.onerror = (e) => note('VOICE ERROR: ' + e.error);
+      let lastBusy = 0;
+      const isBusy = () => (currentAudio && !currentAudio.paused && !currentAudio.ended) ||
+        (window.speechSynthesis && window.speechSynthesis.speaking) || chatBtn.disabled;
+      setInterval(() => { if (isBusy()) lastBusy = Date.now(); }, 200);
+      recog.onresult = (event) => {
+        if (isBusy() || Date.now() - lastBusy < 2000) { note('VOICE: ignored (Sarah is speaking)'); return; }
+        const text = event.results[event.results.length - 1][0].transcript.trim();
+        note('VOICE heard: ' + text);
+        if (text) { speechInput.value = text; triggerAiChat(); }
+      };
+      recog.onend = () => { setTimeout(() => { try { recog.start(); } catch (e) {} }, 300); };
+      note('VOICE: click the page to start');
+      document.addEventListener('click', () => { try { recog.start(); } catch (e) {} }, { once: true });
+    }
+    </script>
 </body>
 </html>

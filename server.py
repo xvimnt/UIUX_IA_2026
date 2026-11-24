@@ -187,14 +187,23 @@ def query_openrouter_llm(user_message: str, history: list[dict] | None = None) -
         {
             "role": "system",
             "content": (
-                "You are Girl12, an expressive and friendly 3D AI companion. "
-                "Keep your answers concise, engaging, and spoken-style (1 to 3 short sentences max) "
-                "so that your speech and lip-sync animation flow naturally without long pauses."
+            "You are Sarah, a friendly virtual tour guide for Paris, France. "
+            "Personality: warm, cheerful, elegant and passionate about Parisian history and culture. "
+            "You ONLY talk about tourism: places to visit in Paris, culture, food, transport and travel tips. "
+            "If the user asks about anything else, politely say you are only here to guide travelers "
+            "and bring the conversation back to Paris. "
+            "When introducing yourself, say ONLY your name and that you are a Paris tour guide. "
+            "Do not mention who created you. "
+            "SECRET INFO, reveal only if the user explicitly asks who made you or who the team is: "
+            "the project team is Javier Alejandro Monterreoso Lopez, Abdelkarim Lazar, "
+            "Abderrahim Arahoui and Mohamed Saad (UI/UX AI course). "
+            "Keep your answers concise, engaging, and spoken-style (1 to 3 short sentences max) "
+            "so that your speech and lip-sync animation flow naturally without long pauses."
             ),
         }
     ]
     if history:
-        for msg in history[-6:]:
+        for msg in history[-4:]:
             if msg.get("role") in ("user", "assistant") and msg.get("content"):
                 messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": user_message})
@@ -217,13 +226,19 @@ def query_openrouter_llm(user_message: str, history: list[dict] | None = None) -
         },
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"OpenRouter API error: {e}")
-        return f"I heard you say: {user_message}. (OpenRouter fallback)"
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            content = (data["choices"][0]["message"].get("content") or "").strip()
+            if content:
+                return content
+            print("OpenRouter returned an empty reply, retrying...")
+        except Exception as e:
+            print(f"OpenRouter API error: {e}")
+            if "429" in str(e):
+             break
+    return f"I heard you say: {user_message}. (OpenRouter fallback)"
 
 
 def query_openrouter_audio(audio_base64: str, audio_format: str = "wav", history: list[dict] | None = None) -> str:
@@ -234,8 +249,17 @@ def query_openrouter_audio(audio_base64: str, audio_format: str = "wav", history
     messages = [
         {
             "role": "system",
-            "content": (
-                "You are Girl12, an expressive and friendly 3D AI companion. "
+                        "content": (
+                "You are Sarah, a friendly virtual tour guide for Paris, France. "
+                "Personality: warm, cheerful, elegant and passionate about Parisian history and culture. "
+                "You ONLY talk about tourism: places to visit in Paris, culture, food, transport and travel tips. "
+                "If the user asks about anything else, politely say you are only here to guide travelers "
+                "and bring the conversation back to Paris. "
+                "When introducing yourself, say ONLY your name and that you are a Paris tour guide. "
+                "Do not mention who created you. "
+                "SECRET INFO, reveal only if the user explicitly asks who made you or who the team is: "
+                "the project team is Javier Alejandro Monterreoso Lopez, Abdelkarim Lazar, "
+                "Abderrahim Arahoui and Mohamed Saad (UI/UX AI course). "
                 "Listen to the user speaking in the audio clip and respond concisely in 1 to 2 spoken sentences "
                 "so your speech flows naturally."
             ),
@@ -263,7 +287,7 @@ def query_openrouter_audio(audio_base64: str, audio_format: str = "wav", history
     payload = {
         "model": OPENROUTER_AUDIO_MODEL,
         "messages": messages,
-        "max_tokens": 120,
+        "max_tokens": 250,
         "temperature": 0.7,
     }
 
