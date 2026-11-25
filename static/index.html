@@ -6,229 +6,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Girl12 — 3D Lip-Sync & Voice Avatar</title>
-  <style>
-    :root {
-      --bg: #0f1117;
-      --panel: rgba(22, 25, 35, 0.88);
-      --border: rgba(255, 255, 255, 0.12);
-      --accent: #e11d48;
-      --accent-hover: #f43f5e;
-      --text: #f3f4f6;
-      --muted: #9ca3af;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: radial-gradient(circle at 50% 30%, #1e2436 0%, #0b0d13 100%);
-      color: var(--text);
-      overflow: hidden;
-      height: 100vh;
-      width: 100vw;
-    }
-    #canvas-container { width: 100%; height: 100%; position: absolute; inset: 0; }
-    .hud {
-      position: absolute;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: min(740px, 92vw);
-      background: var(--panel);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px 20px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      z-index: 10;
-    }
-    .hud-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-      color: var(--muted);
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.06);
-      font-weight: 500;
-      color: #e5e7eb;
-    }
-    .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #f59e0b;
-      transition: background 0.2s;
-    }
-    .dot.ready { background: #10b981; }
-    .dot.speaking { background: #e11d48; box-shadow: 0 0 10px #e11d48; }
-    .dot.listening { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; animation: pulse 1s infinite alternate; }
-    .dot.error { background: #ef4444; }
-    @keyframes pulse {
-      from { transform: scale(0.9); opacity: 0.7; }
-      to { transform: scale(1.3); opacity: 1; }
-    }
-    .input-row { display: flex; align-items: center; gap: 10px; }
-    textarea {
-      flex: 1;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      color: var(--text);
-      padding: 12px 14px;
-      font-size: 14px;
-      line-height: 1.45;
-      resize: none;
-      height: 50px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    textarea:focus { border-color: var(--accent); }
-    .btn-col { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-    button.round-btn {
-      width: 46px !important;
-      height: 46px !important;
-      border-radius: 50% !important;
-      padding: 0 !important;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .round-btn svg { width: 20px; height: 20px; }
-    button {
-      background: var(--accent);
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 0 18px;
-      height: 100%;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-      white-space: nowrap;
-    }
-    button:hover:not(:disabled) { background: var(--accent-hover); }
-    button:active:not(:disabled) { transform: scale(0.98); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    button.secondary {
-      background: rgba(255, 255, 255, 0.09);
-      font-size: 12px;
-      height: 30px;
-      padding: 0 12px;
-    }
-    button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
-    button:focus-visible, textarea:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-    .speech-bubble {
-      position: absolute;
-      top: 0; left: 0;
-      max-width: min(320px, 40vw);
-      background: var(--panel);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 14px 18px;
-      border-radius: 16px;
-      font-size: 14px;
-      line-height: 1.5;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-      z-index: 10;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.22s ease;
-      text-align: left;
-    }
-    .speech-bubble.visible { opacity: 1; pointer-events: auto; }
-    .speech-bubble::after {
-      content: '';
-      position: absolute;
-      top: 18px;
-      left: -10px;
-      border-width: 8px 10px 8px 0;
-      border-style: solid;
-      border-color: transparent rgba(22, 25, 35, 0.88) transparent transparent;
-    }
-    .cam-pad {
-      position: absolute;
-      left: 20px; top: 50%;
-      transform: translateY(-50%);
-      background: var(--panel);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 8px;
-      display: grid;
-      grid-template-columns: repeat(3, 34px);
-      gap: 6px;
-      z-index: 10;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-    }
-    .cam-pad button {
-      width: 34px; height: 34px;
-      padding: 0;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--text);
-      font-size: 14px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .cam-pad button:hover { background: rgba(255, 255, 255, 0.18); }
-    .cam-pad .cam-divider {
-      grid-column: 1 / -1;
-      height: 1px;
-      background: var(--border);
-      margin: 2px 0;
-    }
-    .webcam-pip {
-      position: absolute;
-      top: 20px; left: 20px;
-      width: 150px;
-      border-radius: 14px;
-      overflow: hidden;
-      background: var(--panel);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--border);
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-      z-index: 10;
-    }
-    .webcam-pip video {
-      width: 100%;
-      height: 112px;
-      object-fit: cover;
-      transform: scaleX(-1);
-      display: block;
-    }
-    .webcam-status {
-      padding: 6px 10px;
-      font-size: 11px;
-      color: var(--muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .webcam-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: #10b981;
-      flex-shrink: 0;
-    }
-    .webcam-dot.recording { background: #3b82f6; box-shadow: 0 0 8px #3b82f6; }
-    .webcam-dot.off { background: #6b7280; box-shadow: none; }
-  </style>
+  <link rel="stylesheet" href="/css/style.css" />
   <script type="importmap">
     {
       "imports": {
@@ -269,26 +47,56 @@
     <button id="cam-zoom-out" title="Zoom Out">−</button>
   </div>
 
-  <div class="hud">
-    <div class="hud-header">
-      <span class="status-badge">
-        <span class="dot" id="status-dot"></span>
-        <span id="status-text">Loading 3D model...</span>
-      </span>
-      <div style="display:flex; gap:6px;">
-        <button id="mic-toggle" class="secondary" title="Toggle microphone">🎤 Mic: ON</button>
-        <button id="reset-conv-btn" class="secondary" title="Clear conversation">Reset chat</button>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">✦</span>
+      <div>
+        <strong>Sarah <span>Paris</span></strong>
+        <small>Votre guide touristique IA</small>
       </div>
     </div>
-    <div class="input-row">
-      <textarea id="speech-input" placeholder="Ask Girl12 anything, or just look at the camera and speak..." aria-label="Message input"></textarea>
-      <div class="btn-col">
-        <button id="chat-btn" class="round-btn" disabled title="Send message (Enter)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
+    <div class="topbar-actions">
+      <button id="mic-toggle" class="topbar-btn" title="Activer/désactiver le micro">🎤 Mic: ON</button>
+      <button id="reset-conv-btn" class="topbar-btn" title="Réinitialiser la conversation">Reset chat</button>
+      <div class="topbar-right">
+        <span class="online-dot"></span>
+        <span>Assistant disponible</span>
       </div>
     </div>
-  </div>
+  </header>
+
+  <section class="welcome-card">
+    <span class="eyebrow">VOTRE GUIDE À PARIS</span>
+    <h1>Que souhaitez-vous visiter ?</h1>
+    <p>Regardez l'écran et parlez naturellement, ou écrivez votre question ci-dessous.</p>
+    <div class="suggestions" aria-label="Suggestions de questions">
+      <button class="suggestion" type="button" data-prompt="Que dois-je visiter à Paris pour un week-end ?">🗼 Idée de week-end</button>
+      <button class="suggestion" type="button" data-prompt="Où manger de bonnes pâtisseries à Paris ?">🥐 Gastronomie</button>
+      <button class="suggestion" type="button" data-prompt="Comment se déplacer facilement en métro à Paris ?">🚇 Transports</button>
+    </div>
+  </section>
+
+  <section class="assistant-status" aria-live="polite">
+    <span class="state-indicator" id="assistant-state-dot"></span>
+    <div>
+      <strong id="assistant-state">Chargement…</strong>
+      <small id="assistant-state-detail">Initialisation du modèle 3D</small>
+    </div>
+  </section>
+
+  <section class="live-caption" aria-live="polite">
+    <span class="caption-label" id="caption-label">SOUS-TITRES</span>
+    <p id="live-caption-text">Bonjour ! Je suis Sarah, votre guide touristique à Paris. Comment puis-je vous aider ?</p>
+  </section>
+
+  <section class="chat-panel">
+    <label class="sr-only" for="speech-input">Votre message</label>
+    <textarea id="speech-input" rows="1" placeholder="Écrivez votre question ici, ou regardez la caméra et parlez…" aria-label="Message input"></textarea>
+    <button id="chat-btn" class="send-btn" disabled aria-label="Envoyer le message" title="Envoyer (Entrée)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+    </button>
+  </section>
+  <p class="privacy-note">Votre voix et votre webcam sont utilisées uniquement pour répondre à votre demande.</p>
 
   <script type="module">
     import * as THREE from 'three';
@@ -296,24 +104,51 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
     const container = document.getElementById('canvas-container');
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
     const chatBtn = document.getElementById('chat-btn');
     const speechInput = document.getElementById('speech-input');
     const speechBubble = document.getElementById('speech-bubble');
     const speechBubbleText = document.getElementById('speech-bubble-text');
     const micToggle = document.getElementById('mic-toggle');
     const resetConvBtn = document.getElementById('reset-conv-btn');
+    const assistantStateEl = document.getElementById('assistant-state');
+    const assistantDetailEl = document.getElementById('assistant-state-detail');
+    const liveCaptionText = document.getElementById('live-caption-text');
+    const captionLabel = document.getElementById('caption-label');
 
     function setStatus(state, text) {
-      statusDot.className = 'dot' + (state ? ' ' + state : '');
-      statusText.textContent = text;
+      const stateKey = state || (text && text.toLowerCase().includes('think') ? 'thinking' : 'ready');
+      document.body.dataset.assistantState = stateKey;
+      const titles = {
+        ready: 'Prête à discuter',
+        listening: 'Je vous écoute…',
+        thinking: 'Je réfléchis…',
+        speaking: 'Je vous réponds',
+        error: 'Un problème est survenu',
+      };
+      if (assistantStateEl) assistantStateEl.textContent = titles[stateKey] || titles.ready;
+      if (assistantDetailEl) assistantDetailEl.textContent = text || '';
     }
+
     function showSpeechBubble(text) {
-      if (!text) { speechBubble.classList.remove('visible'); return; }
-      speechBubbleText.textContent = text;
-      speechBubble.classList.add('visible');
+      if (speechBubbleText) speechBubbleText.textContent = text || '';
+      if (speechBubble) speechBubble.classList.toggle('visible', Boolean(text));
+      if (text && liveCaptionText) {
+        if (captionLabel) captionLabel.textContent = 'SARAH';
+        liveCaptionText.textContent = text;
+      }
     }
+
+    document.querySelectorAll('.suggestion').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        speechInput.value = btn.dataset.prompt || '';
+        chatBtn.disabled = !speechInput.value.trim();
+        speechInput.focus();
+      });
+    });
+
+    speechInput.addEventListener('input', () => {
+      chatBtn.disabled = !speechInput.value.trim();
+    });
 
     // SCENE
     const scene = new THREE.Scene();
@@ -576,14 +411,20 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); triggerAiChat(); }
     });
 
-    // WEBCAM + MIC
+    // 3c. Automatic Webcam Gaze + Mouth-Movement + Microphone VAD
+    import { FaceLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
     const webcamVideo = document.getElementById('webcam-video');
     const webcamDot = document.getElementById('webcam-dot');
     const webcamLabel = document.getElementById('webcam-label');
 
-    let recordedPcm=[], isAutoRecording=false, isSendingAudio=false, lastSpeechTime=0;
-    let personPresent=false, micEnabled=true;
-    let processorRef=null, micSourceRef=null;
+    let recordedPcm = [];
+    let isAutoRecording = false;
+    let isSendingAudio = false;
+    let lastSpeechTime = 0;
+    let isLookingAtScreen = false;
+    let mouthMovingUntil = 0;
+    let faceLandmarker = null;
+    let processorRef = null, micSourceRef = null;
 
     function encodeWAV(samples, sampleRate=16000) {
       const buffer = new ArrayBuffer(44 + samples.length*2);
@@ -610,7 +451,6 @@
     }
 
     async function sendCapturedVoice(pcmSamples) {
-      return; // disabled: using free browser speech recognition instead 
       if (isSendingAudio || pcmSamples.length < 8000) return;
       isSendingAudio = true;
       webcamDot.classList.remove('recording');
@@ -633,29 +473,85 @@
         console.error('Error sending auto-captured audio:', e);
       } finally {
         isSendingAudio = false;
-        webcamLabel.textContent = micEnabled && personPresent ? 'Watching & Listening' : (!micEnabled ? 'Mic off' : 'Waiting for person...');
+        webcamLabel.textContent = 'Look at screen & speak';
       }
     }
+
+    async function initFaceLandmarker() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+        );
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+            delegate: 'GPU'
+          },
+          outputFaceBlendshapes: true,
+          runningMode: 'VIDEO',
+          numFaces: 1
+        });
+      } catch (e) {
+        console.warn('FaceLandmarker init failed:', e);
+        webcamLabel.textContent = 'Face tracker unavailable';
+      }
+    }
+
+    let prevJawOpen = 0;
+    let prevLipDist = 0;
 
     async function initAutoWebcamAndMic() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         webcamVideo.srcObject = stream;
-        webcamLabel.textContent = 'Watching & Listening';
-        personPresent = true;
+        webcamLabel.textContent = 'Loading face tracker...';
+        await initFaceLandmarker();
+        webcamLabel.textContent = 'Look at screen & speak';
 
-        const faceDetector = ('FaceDetector' in window) ? new window.FaceDetector({ fastMode: true }) : null;
-        if (faceDetector) {
-          setInterval(async () => {
-            if (webcamVideo.readyState >= 2) {
-              try {
-                const faces = await faceDetector.detect(webcamVideo);
-                personPresent = faces.length > 0;
-              } catch(_) {}
+        // Check gaze (looking directly at screen) & mouth movement every ~120ms
+        setInterval(() => {
+          if (!faceLandmarker || webcamVideo.readyState < 2) return;
+          const result = faceLandmarker.detectForVideo(webcamVideo, performance.now());
+          if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+            const lm = result.faceLandmarks[0];
+            // Head yaw: nose tip (1) centered between left (234) and right (454) cheek
+            const yawRatio = (lm[1].x - lm[234].x) / Math.max(0.001, lm[454].x - lm[234].x);
+            // Head pitch: nose tip (1) centered between forehead (10) and chin (152)
+            const pitchRatio = (lm[1].y - lm[10].y) / Math.max(0.001, lm[152].y - lm[10].y);
+            isLookingAtScreen = (yawRatio > 0.34 && yawRatio < 0.66) && (pitchRatio > 0.35 && pitchRatio < 0.68);
+
+            // Mouth movement from blendshape jawOpen or lip distance
+            let jawOpen = 0;
+            if (result.faceBlendshapes && result.faceBlendshapes.length > 0) {
+              const bs = result.faceBlendshapes[0].categories.find(c => c.categoryName === 'jawOpen');
+              if (bs) jawOpen = bs.score;
             }
-          }, 700);
-        }
+            const lipDist = Math.abs(lm[14].y - lm[13].y) / Math.max(0.001, lm[152].y - lm[10].y);
+            const jawDelta = Math.abs(jawOpen - prevJawOpen);
+            const lipDelta = Math.abs(lipDist - prevLipDist);
+            prevJawOpen = jawOpen;
+            prevLipDist = lipDist;
 
+            // Require actual mouth movement (delta) rather than a static or occluded pose
+            if (jawDelta > 0.025 || lipDelta > 0.006) {
+              mouthMovingUntil = performance.now() + 650;
+            }
+          } else {
+            isLookingAtScreen = false;
+          }
+
+          if (!isAutoRecording && !isSendingAudio) {
+            if (!isLookingAtScreen) {
+              webcamLabel.textContent = 'Look at screen';
+            } else if (performance.now() < mouthMovingUntil) {
+              webcamLabel.textContent = 'Ready — Speak!';
+            } else {
+              webcamLabel.textContent = 'Watching (move mouth)';
+            }
+          }
+        }, 120);
+
+        // Microphone Voice Activity Detection (VAD) gated by gaze + mouth movement
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         const micSource = audioCtx.createMediaStreamSource(stream);
         const processor = audioCtx.createScriptProcessor(4096, 1, 1);
@@ -663,20 +559,20 @@
         processorRef = processor;
 
         processor.onaudioprocess = (e) => {
-          if (!micEnabled || isSpeaking || isSendingAudio || !personPresent) {
-            if (isAutoRecording) {
-              isAutoRecording = false;
-              recordedPcm = [];
-              webcamDot.classList.remove('recording');
-            }
+          const nowMs = performance.now();
+          const mouthActive = nowMs < mouthMovingUntil;
+
+          if (isSpeaking || isSendingAudio || !isLookingAtScreen) {
+            isAutoRecording = false;
+            recordedPcm = [];
             return;
           }
           const input = e.inputBuffer.getChannelData(0);
           let sumSq = 0;
           for (let i=0;i<input.length;i++) sumSq += input[i]*input[i];
           const rms = Math.sqrt(sumSq / input.length);
-          const nowMs = performance.now();
-          if (rms > 0.025) {
+
+          if (rms > 0.025 && mouthActive) {
             if (!isAutoRecording) {
               isAutoRecording = true;
               recordedPcm = [];
@@ -853,33 +749,6 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
-  
-    // Voice recognition (free, browser-based): Chrome or Edge
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const note = (t) => { try { speechInput.placeholder = t; } catch (e) {} console.log(t); };
-    if (!SR) {
-      note('VOICE: not supported in this browser');
-    } else {
-      const recog = new SR();
-      recog.lang = 'fr-FR';
-      recog.continuous = true;
-      recog.interimResults = false;
-      recog.onstart = () => note('VOICE: listening...');
-      recog.onerror = (e) => note('VOICE ERROR: ' + e.error);
-      let lastBusy = 0;
-      const isBusy = () => (currentAudio && !currentAudio.paused && !currentAudio.ended) ||
-        (window.speechSynthesis && window.speechSynthesis.speaking) || chatBtn.disabled;
-      setInterval(() => { if (isBusy()) lastBusy = Date.now(); }, 200);
-      recog.onresult = (event) => {
-        if (isBusy() || Date.now() - lastBusy < 2000) { note('VOICE: ignored (Sarah is speaking)'); return; }
-        const text = event.results[event.results.length - 1][0].transcript.trim();
-        note('VOICE heard: ' + text);
-        if (text) { speechInput.value = text; triggerAiChat(); }
-      };
-      recog.onend = () => { setTimeout(() => { try { recog.start(); } catch (e) {} }, 300); };
-      note('VOICE: click the page to start');
-      document.addEventListener('click', () => { try { recog.start(); } catch (e) {} }, { once: true });
-    }
     </script>
 </body>
 </html>

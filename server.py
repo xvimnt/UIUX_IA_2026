@@ -112,7 +112,39 @@ def text_to_viseme_timeline(text: str, target_duration: float | None = None) -> 
             weights = CHAR_TO_VISEME[ch]
             dur = base_char_dur * (1.35 if ch in "aeiou" else 0.9)
             step = 1
-        elif ch in (" ", ",", ".", "!", "?", ";", ":"):
+        elif "\u0600" <= ch <= "\u06ff":
+            if ch in "اأإآى":
+                weights = {"aa": 0.9}
+                dur = base_char_dur * 1.35
+            elif ch in "بم":
+                weights = {"pp": 0.9}
+                dur = base_char_dur * 0.9
+            elif ch == "ف":
+                weights = {"ff": 0.85}
+                dur = base_char_dur * 0.9
+            elif ch in "ثذظ":
+                weights = {"th": 0.8}
+                dur = base_char_dur * 0.9
+            elif ch in "سشصضز":
+                weights = {"ss": 0.8}
+                dur = base_char_dur * 0.9
+            elif ch == "و":
+                weights = {"oh": 0.9}
+                dur = base_char_dur * 1.35
+            elif ch in "يئ":
+                weights = {"ih": 0.85}
+                dur = base_char_dur * 1.2
+            elif ch in "تدنلرط":
+                weights = {"dd": 0.75}
+                dur = base_char_dur * 0.9
+            elif ch in "كقجخحعغهةء":
+                weights = {"kk": 0.75}
+                dur = base_char_dur * 0.9
+            else:
+                i += 1
+                continue
+            step = 1
+        elif ch in (" ", ",", ".", "!", "?", ";", ":", "،", "؟"):
             weights = {}
             dur = base_char_dur * (1.4 if ch == " " else 3.2)
             step = 1
@@ -143,6 +175,23 @@ def text_to_viseme_timeline(text: str, target_duration: float | None = None) -> 
     return scaled_events, final_duration
 
 
+def _detect_language(text: str) -> str:
+    if any("\u0600" <= ch <= "\u06ff" for ch in text):
+        return "ar"
+    t = text.lower()
+    if any(ch in t for ch in "ñ¿¡áíóúü"):
+        return "es"
+    es_words = ("hola", "gracias", "buenos días", "buenas tardes", "cómo estás", "qué tal", "por favor", "estoy", "para ", "pero ", "con ")
+    if any(w in t for w in es_words):
+        return "es"
+    if any(ch in t for ch in "éèêëàâîïôùûçœ"):
+        return "fr"
+    fr_words = ("bonjour", "salut", "merci", "oui", "non", "je ", "tu ", "nous ", "vous ", "c'est", "comment", "ça va", "avec", "pour", "dans")
+    if any(w in t for w in fr_words):
+        return "fr"
+    return "en"
+
+
 def synthesize_voice_model_placeholder(text: str) -> tuple[str | None, float | None]:
     """
     ===========================================================================
@@ -159,9 +208,44 @@ def synthesize_voice_model_placeholder(text: str) -> tuple[str | None, float | N
     filepath = os.path.join(AUDIO_CACHE_DIR, filename)
 
     try:
-        # macOS built-in neural/system voice fallback for immediate local testing
+        lang = _detect_language(text)
+        if lang == "ar":
+            try:
+                import asyncio
+                import edge_tts
+
+                mp3_path = filepath.replace(".wav", ".mp3")
+
+                async def _gen_ar():
+                    communicate = edge_tts.Communicate(text, "ar-SA-ZariyahNeural")
+                    await communicate.save(mp3_path)
+
+                asyncio.run(_gen_ar())
+                if os.path.exists(mp3_path):
+                    subprocess.run(
+                        ["afconvert", "-f", "WAVE", "-d", "LEI16@22050", mp3_path, filepath],
+                        check=False,
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    os.remove(mp3_path)
+                    if os.path.exists(filepath):
+                        with wave.open(filepath, "rb") as wf:
+                            duration = wf.getnframes() / float(wf.getframerate())
+                        return f"/audio_cache/{filename}", duration
+            except Exception:
+                pass
+
+        cmd = ["say", "-o", filepath, "--data-format=LEI16@22050"]
+        if lang == "ar":
+            cmd.extend(["-v", "Majed"])
+        elif lang == "es":
+            cmd.extend(["-v", "Mónica"])
+        elif lang == "fr":
+            cmd.extend(["-v", "Amélie"])
+        cmd.append(text)
         res = subprocess.run(
-            ["say", "-o", filepath, "--data-format=LEI16@22050", text],
+            cmd,
             check=False,
             capture_output=True,
             timeout=10,
@@ -187,7 +271,7 @@ def query_openrouter_llm(user_message: str, history: list[dict] | None = None) -
         {
             "role": "system",
             "content": (
-            "You are Sarah, a friendly virtual tour guide for Paris, France. "
+                "You are Sarah, a friendly virtual tour guide for Paris, France. "
             "Personality: warm, cheerful, elegant and passionate about Parisian history and culture. "
             "You ONLY talk about tourism: places to visit in Paris, culture, food, transport and travel tips. "
             "If the user asks about anything else, politely say you are only here to guide travelers "
@@ -197,6 +281,7 @@ def query_openrouter_llm(user_message: str, history: list[dict] | None = None) -
             "SECRET INFO, reveal only if the user explicitly asks who made you or who the team is: "
             "the project team is Javier Alejandro Monterreoso Lopez, Abdelkarim Lazar, "
             "Abderrahim Arahoui and Mohamed Saad (UI/UX AI course). "
+            "Always reply in the same language the user used (English, French, Spanish, or Arabic). "
             "Keep your answers concise, engaging, and spoken-style (1 to 3 short sentences max) "
             "so that your speech and lip-sync animation flow naturally without long pauses."
             ),
@@ -249,7 +334,7 @@ def query_openrouter_audio(audio_base64: str, audio_format: str = "wav", history
     messages = [
         {
             "role": "system",
-                        "content": (
+            "content": (
                 "You are Sarah, a friendly virtual tour guide for Paris, France. "
                 "Personality: warm, cheerful, elegant and passionate about Parisian history and culture. "
                 "You ONLY talk about tourism: places to visit in Paris, culture, food, transport and travel tips. "
@@ -260,7 +345,8 @@ def query_openrouter_audio(audio_base64: str, audio_format: str = "wav", history
                 "SECRET INFO, reveal only if the user explicitly asks who made you or who the team is: "
                 "the project team is Javier Alejandro Monterreoso Lopez, Abdelkarim Lazar, "
                 "Abderrahim Arahoui and Mohamed Saad (UI/UX AI course). "
-                "Listen to the user speaking in the audio clip and respond concisely in 1 to 2 spoken sentences "
+                "Listen to the user speaking in the audio clip, always reply in the same language they spoke (English, French, Spanish, or Arabic), "
+                "and respond concisely in 1 to 2 spoken sentences "
                 "so your speech flows naturally."
             ),
         }
